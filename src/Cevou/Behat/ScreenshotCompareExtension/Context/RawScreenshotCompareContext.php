@@ -138,7 +138,7 @@ class RawScreenshotCompareContext extends RawMinkContext implements ScreenshotCo
               function show(id) {
                   document.getElementById(id).style.display = "inherit";
               }
-              
+
               function hide(id) {
                   document.getElementById(id).style.display = "none";
               }
@@ -146,9 +146,9 @@ class RawScreenshotCompareContext extends RawMinkContext implements ScreenshotCo
           </head>
           <body style="padding: 0px; margin: 0px;">
             <p style="margin: 0px; padding: 10px; position: fixed; top: 0px; left: 0px; z-index: 1000; background-color: #ccc;">SHOW: <button onmousedown="show('test')" onmouseup="hide('test')">test image</button> <button onmousedown="show('reference')" onmouseup="hide('reference')">reference image</button></p>
-            <img id="diff" style="position: absolute;" src="diff_$diffFileName" />
-            <img id="test" style="position: absolute; display: none;" src="test_$diffFileName" />
-            <img id="reference" style="position: absolute; display: none;" src="reference_$diffFileName" />
+            <img id="diff" style="position: absolute; top: 40px;" src="diff_$diffFileName" />
+            <img id="test" style="position: absolute; display: none; top: 40px;" src="test_$diffFileName" />
+            <img id="reference" style="position: absolute; display: none; top: 40px;" src="reference_$diffFileName" />
           </body>
          </html>
 EOT;
