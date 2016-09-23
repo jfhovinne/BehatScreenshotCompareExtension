@@ -66,10 +66,10 @@ class RawScreenshotCompareContext extends RawMinkContext implements ScreenshotCo
         throw new FileNotFoundException(NULL, 0, NULL, $full_filename);
       }
 
-      $actualScreenshot = new \Imagick();
+      $testScreenshot = new \Imagick();
       $session->resizeWindow($parameters['width'], $parameters['height']);
-      $actualScreenshot->readImageBlob($session->getScreenshot());
-      $actualGeometry = $actualScreenshot->getImageGeometry();
+      $testScreenshot->readImageBlob($session->getScreenshot());
+      $testGeometry = $testScreenshot->getImageGeometry();
 
       // Crop the image according to the settings.
       if (array_key_exists('crop', $configuration) || $selector) {
@@ -86,78 +86,116 @@ class RawScreenshotCompareContext extends RawMinkContext implements ScreenshotCo
         }
         else {
           $crop = $configuration['crop'];
-          $crop['width'] = $actualGeometry['width'] - $crop['right'] - $crop['left'];
-          $crop['height'] = $actualGeometry['height'] - $crop['top'] - $crop['bottom'];
+          $crop['width'] = $testGeometry['width'] - $crop['right'] - $crop['left'];
+          $crop['height'] = $testGeometry['height'] - $crop['top'] - $crop['bottom'];
         }
 
-        $actualScreenshot->cropImage($crop['width'], $crop['height'], $crop['left'], $crop['top']);
+        $testScreenshot->cropImage($crop['width'], $crop['height'], $crop['left'], $crop['top']);
 
-        // Refresh geomerty information.
-        $actualGeometry = $actualScreenshot->getImageGeometry();
+        // Refresh geometry information after cropping.
+        $testGeometry = $testScreenshot->getImageGeometry();
       }
 
-      $compareScreenshot = new \Imagick($full_filename);
-      $compareGeometry = $compareScreenshot->getImageGeometry();
+      // Load reference image.
+      $referenceScreenshot = new \Imagick($full_filename);
+      $referenceGeometry = $referenceScreenshot->getImageGeometry();
 
       // ImageMagick can only compare files which have the same size.
-      if ($actualGeometry !== $compareGeometry) {
+      if ($testGeometry !== $referenceGeometry) {
+        $this->generateReport('compare', $configuration, [
+          'filename' => $fileName,
+          'screenshots' => [
+            'test' => $testScreenshot,
+            'reference' => $referenceScreenshot,
+          ],
+        ]);
+
         throw new \ImagickException(sprintf(
-          "Screenshots don't have an equal geometry. Should be %sx%s but is %sx%s",
-          $compareGeometry['width'],
-          $compareGeometry['height'],
-          $actualGeometry['width'],
-          $actualGeometry['height']
+          "Screenshots of '%s' on the '%s' breakpoint don't have an equal geometry.\nShould be %sx%s but is %sx%s",
+          $fileName,
+          $breakpoint_name,
+          $referenceGeometry['width'],
+          $referenceGeometry['height'],
+          $testGeometry['width'],
+          $testGeometry['height']
         ));
       }
-
-      $result = $actualScreenshot->compareImages($compareScreenshot, \Imagick::METRIC_ROOTMEANSQUAREDERROR);
+      // Make comparison.
+      $result = $referenceScreenshot->compareImages($testScreenshot, \Imagick::METRIC_ROOTMEANSQUAREDERROR);
 
       if ($result[1] > 0) {
-        /** @var GaufretteFilesystem $targetFilesystem */
-        $targetFilesystem = $configuration['adapter'];
-        $datestamp = date('ymdHis');
-        $diffFileName = sprintf(
-          '%s_%s.%s',
-          $this->getMinkParameter('browser_name'),
-          $datestamp,
-          'png'
-        );
-
         /** @var \Imagick $diffScreenshot */
         $diffScreenshot = $result[0];
         $diffScreenshot->setImageFormat("png");
-        $targetFilesystem->write('diff_' . $diffFileName, $diffScreenshot);
-        $targetFilesystem->write('test_' . $diffFileName, $actualScreenshot);
-        $targetFilesystem->write('reference_' . $diffFileName, $compareScreenshot);
 
-        $html = <<<EOT
-        <html>
-          <head>
-            <title>$fileName</title>
-            <script>
-              function show(id) {
-                  document.getElementById(id).style.display = "inherit";
-              }
-
-              function hide(id) {
-                  document.getElementById(id).style.display = "none";
-              }
-            </script>
-          </head>
-          <body style="padding: 0px; margin: 0px;">
-            <p style="margin: 0px; padding: 10px; position: fixed; top: 0px; left: 0px; z-index: 1000; background-color: #ccc;">SHOW: <button onmousedown="show('test')" onmouseup="hide('test')">test image</button> <button onmousedown="show('reference')" onmouseup="hide('reference')">reference image</button></p>
-            <img id="diff" style="position: absolute; top: 40px;" src="diff_$diffFileName" />
-            <img id="test" style="position: absolute; display: none; top: 40px;" src="test_$diffFileName" />
-            <img id="reference" style="position: absolute; display: none; top: 40px;" src="reference_$diffFileName" />
-          </body>
-         </html>
-EOT;
-
-        $targetFilesystem->write($fileName . '.' . $datestamp . '.html', $html);
+        $this->generateReport('compare', $configuration, [
+          'filename' => $fileName,
+          'screenshots' => [
+            'diff' => $diffScreenshot,
+            'test' => $testScreenshot,
+            'reference' => $referenceScreenshot,
+          ],
+        ]);
 
         throw new \ImagickException(sprintf("Files are not equal for file '%s' breakpoint '%s'.\nDiff saved to %s", $fileName, $breakpoint_name, $diffFileName));
       }
     }
   }
+
+  /**
+   * @param $type
+   * @param $configuration
+   * @param $report
+   */
+  private function generateReport($type, $configuration, $report) {
+    /** @var GaufretteFilesystem $targetFilesystem */
+    $targetFilesystem = $configuration['adapter'];
+    $timestamp = date('ymdHis');
+    $reportFileName = sprintf(
+      '%s_%s.%s',
+      $this->getMinkParameter('browser_name'),
+      $timestamp,
+      'png'
+    );
+    $fileName = $report['filename'];
+    $images = '';
+    $buttons = '';
+    $i = 0;
+    foreach ($report['screenshots'] as $key => $data) {
+      $currentFileName = $key . '_' . $reportFileName;
+      $targetFilesystem->write($currentFileName, $data);
+      if ($i > 0) {
+        $buttons .= '<button onmousedown="show(event)" onmouseup="hide(event)">' . $key . '</button>';
+      }
+      $images .= '<img id="' . $key . '" style="position: absolute; top: 40px;' . ($i > 0 ? ' display:none;' : '') . '" src="' . $currentFileName . '" />';
+      $i++;
+    }
+
+    $html = <<<EOT
+        <html>
+          <head>
+            <title>$fileName</title>
+            <script>
+              function show(e) {
+                  var id = e.target.innerHTML;
+                  document.getElementById(id).style.display = "inherit";
+              }
+
+              function hide(e) {
+                  var id = e.target.innerHTML;
+                  document.getElementById(id).style.display = "none";
+              }
+            </script>
+          </head>
+          <body style="padding: 0px; margin: 0px;">
+            <p style="margin: 0px; padding: 10px; position: fixed; top: 0px; left: 0px; z-index: 1000; background-color: #ccc;">SHOW: $buttons</p>
+            $images
+          </body>
+         </html>
+EOT;
+
+    $targetFilesystem->write($fileName . '.' . $timestamp . '.html', $html);
+  }
+
 
 }
