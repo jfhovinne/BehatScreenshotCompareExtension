@@ -137,7 +137,7 @@ class RawScreenshotCompareContext extends RawMinkContext implements ScreenshotCo
           ],
         ]);
 
-        throw new \ImagickException(sprintf("Files are not equal for file '%s' breakpoint '%s'.\nDiff saved to %s", $fileName, $breakpoint_name, $diffFileName));
+        throw new \ImagickException(sprintf("Files are not equal for file '%s' breakpoint '%s'.", $fileName, $breakpoint_name));
       }
     }
   }
